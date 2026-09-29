@@ -25,8 +25,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3 h1:fuSCw4Z2qfRCztMPO3GXJNSiEp6W
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3/go.mod h1:6SxcHheD1pPR5+kWm1wGvjlL/YqUsh267sAfEmN4K7A=
 github.com/aws/aws-sdk-go-v2/service/bedrockdataautomationruntime v1.19.0 h1:jnf1eIj0w21/aItB82Qx8vKu0c0KE0pZUe/0GKx2XBk=
 github.com/aws/aws-sdk-go-v2/service/bedrockdataautomationruntime v1.19.0/go.mod h1:iwhLfPyatFnc4beXimkgXlW1At3OUxkDT/gWb0cjopc=
-github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.57.0 h1:pwRzOa/ObDZK/YHRqt869154aE+Kxc3yzlGd//Weh+Q=
-github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.57.0/go.mod h1:RfUVz1gzKqgRgCRrPwf48LGS5ex8MopQWBHn5H9QSHo=
+github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.63.0 h1:0YDtf7baintcPG68AG0sMdAVoV1Iej6eXIBh38sd1m4=
+github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.63.0/go.mod h1:7P+JIqwRqUIlzGn7Ba0qbSbPV/zsdZk7VkJTEFO6Z3U=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 h1:bAdDl/HkGCcGPoe25ToSHEw23VIxt6CT5fLcg111BKg=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19/go.mod h1:KaUzbLxv4CeSxh6ZCl9B4m7CuFenS8kUEaDs+f/DQr4=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3 h1:bON1rJf67TSTDCKg816AAIE4xSTtoo9tl0XRkO72R+I=
@@ -44,8 +44,8 @@ github.com/aws/smithy-go v1.28.1/go.mod h1:YE2RhdIuDbA5E5bTdciG9KrW3+TiEONeUWCqx
 github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvFv1sNto9p6w=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/craigh33/adk-go-bedrock v1.7.7 h1:ekChMxoDqWfmZWbJGCkJ8WrbI7K0qkHFGZS68/GuG/k=
-github.com/craigh33/adk-go-bedrock v1.7.7/go.mod h1:G3Sg5lB+cWZddyjqw+6NJZASDTdK43/BKxq7PrrvBUM=
+github.com/craigh33/adk-go-bedrock v1.7.10 h1:3FcLPw+UkDNYlWiGfcm/GUbEHxwDYIHSOyXlHu1EAxc=
+github.com/craigh33/adk-go-bedrock v1.7.10/go.mod h1:zsfC/MihZ9pxMGxggW65JwJO5alCzGoA+AdgaNG73rE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/felixge/httpsnoop v1.1.0 h1:3YtUj32ZZkqZtt3sZZsClsymw/QDuVfpNhoA31zeORc=
 github.com/felixge/httpsnoop v1.1.0/go.mod h1:Zqxgdd+1Rkcz8euOqdr7lqgCRJztwr5hp9vDSi5UZCE=

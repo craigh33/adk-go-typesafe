@@ -3,7 +3,7 @@ module github.com/craigh33/adk-go-typesafe/examples/bedrock-routing
 go 1.26.6
 
 require (
-	github.com/craigh33/adk-go-bedrock v1.7.7
+	github.com/craigh33/adk-go-bedrock v1.7.10
 	github.com/craigh33/adk-go-typesafe v0.1.0
 	google.golang.org/adk/v2 v2.4.0
 	google.golang.org/genai v1.71.0
@@ -23,7 +23,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/bedrockdataautomationruntime v1.19.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.57.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.63.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 // indirect
