@@ -5,7 +5,7 @@ go 1.26.6
 require (
 	github.com/oapi-codegen/runtime v1.7.0
 	google.golang.org/adk/v2 v2.4.0
-	google.golang.org/genai v1.71.0
+	google.golang.org/genai v1.72.0
 )
 
 require (
