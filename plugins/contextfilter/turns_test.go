@@ -204,10 +204,11 @@ func TestCompactionSummaryIsProtected(t *testing.T) {
 	})
 	request := &model.LLMRequest{Contents: contents}
 	ctx := callbackContext{
-		parent: t.Context(), input: current,
+		Context: &agent.ContextMock{},
+		parent:  t.Context(), input: current,
 		sess: stubSession{events: stubEvents{events: []*session.Event{event}}},
 	}
-	report, err := apply(t, testConfig(api), ctx, request)
+	report, err := apply(t, testConfig(api), agent.NewCallbackContext(ctx, nil), request)
 	if err != nil || report.Err != nil ||
 		!reflect.DeepEqual(request.Contents, []*genai.Content{contents[0], contents[1], current}) {
 		t.Fatalf("report=%+v err=%v", report, err)
@@ -222,8 +223,8 @@ func TestMissingSessionEvents(t *testing.T) {
 	for _, sess := range []session.Session{nil, stubSession{}, stubSession{events: stubEvents{}}} {
 		current := user("Current")
 		request := &model.LLMRequest{Contents: []*genai.Content{user("Old"), reply("Done"), current}}
-		ctx := callbackContext{parent: t.Context(), input: current, sess: sess}
-		report, err := apply(t, testConfig(api), ctx, request)
+		ctx := callbackContext{Context: &agent.ContextMock{}, parent: t.Context(), input: current, sess: sess}
+		report, err := apply(t, testConfig(api), agent.NewCallbackContext(ctx, nil), request)
 		if err != nil || report.Err != nil || report.RemovedTurns != 1 ||
 			!slices.Equal(request.Contents, []*genai.Content{current}) {
 			t.Fatalf("missing or empty event list: report=%+v err=%v", report, err)
