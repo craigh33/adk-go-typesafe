@@ -55,12 +55,15 @@ func (p *contextFilter) newConversation(ctx agent.Context, request *model.LLMReq
 	for i := max(0, len(c.turns)-p.cfg.KeepRecentTurns); i < len(c.turns); i++ {
 		c.turns[i].pinned = true
 	}
-	c.protectSummaries(ctx)
+	c.protectSummaries(ctx.WithICDelta(nil))
 	c.protectToolPairs()
 	return c
 }
 
-func (c *conversation) protectSummaries(ctx agent.Context) {
+func (c *conversation) protectSummaries(ctx agent.InvocationContext) {
+	if ctx == nil {
+		return
+	}
 	sess := ctx.Session()
 	if sess == nil {
 		return

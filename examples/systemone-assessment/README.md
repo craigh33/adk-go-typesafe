@@ -7,7 +7,7 @@ export TYPESAFE_API_KEY='...'
 export TYPESAFE_BASE_URL='https://api.typesafe.ai'
 export GOOGLE_API_KEY='...'
 export GEMINI_MODEL='your-supported-model'
-go run ./examples/systemone-assessment 'Draft a support ticket about a duplicate charge'
+make -C examples/systemone-assessment run PROMPT='"Draft a support ticket about a duplicate charge"'
 ```
 
 `TYPESAFE_BASE_URL` is optional and defaults to `https://api.typesafe.ai`. Use the API root, without `/v1/systemone`.
