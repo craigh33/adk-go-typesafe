@@ -37,6 +37,10 @@ func (c callbackContext) Value(key any) any           { return c.parent.Value(ke
 func (c callbackContext) UserContent() *genai.Content { return c.input }
 func (c callbackContext) Session() session.Session    { return c.sess }
 
+func (c callbackContext) WithICDelta(*agent.InvocationContextDelta) agent.InvocationContext {
+	return c
+}
+
 func user(text string) *genai.Content  { return genai.NewContentFromText(text, genai.RoleUser) }
 func reply(text string) *genai.Content { return genai.NewContentFromText(text, genai.RoleModel) }
 
@@ -52,7 +56,7 @@ func testConfig(api typesafe.Evaluator) Config {
 	return Config{API: api, KeepRecentTurns: 1, MinBytes: 1}
 }
 
-func apply(t *testing.T, cfg Config, ctx callbackContext, request *model.LLMRequest) (Report, error) {
+func apply(t *testing.T, cfg Config, ctx agent.Context, request *model.LLMRequest) (Report, error) {
 	t.Helper()
 	var report Report
 	reports := 0
