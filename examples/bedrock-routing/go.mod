@@ -6,7 +6,7 @@ require (
 	github.com/craigh33/adk-go-bedrock v1.8.6
 	github.com/craigh33/adk-go-typesafe v0.1.0
 	google.golang.org/adk/v2 v2.5.0
-	google.golang.org/genai v1.72.0
+	google.golang.org/genai v1.73.0
 )
 
 require (
