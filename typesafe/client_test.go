@@ -646,6 +646,20 @@ func TestEvaluateImageAssets(t *testing.T) {
 				"image-criteria":     {Data: encoded.Bytes()},
 			}
 
+			pointerJSON, err := json.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			valueJSON, err := json.Marshal(*request)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !bytes.Equal(valueJSON, pointerJSON) {
+				t.Fatal("request value and pointer encoded different image payloads")
+			}
+
 			var attempts atomic.Int32
 			client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Typesafe-Danger-Zone-Images") != "" {

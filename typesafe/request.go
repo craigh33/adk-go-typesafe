@@ -36,6 +36,8 @@ type Image struct {
 // Request evaluates named questions against text or structured JSON state.
 // An empty Model uses the client's default. Do not mutate a request while it is
 // being evaluated.
+//
+//nolint:recvcheck // MarshalJSON accepts values; Validate handles nil requests.
 type Request struct {
 	State     any                 `json:"state"`
 	Model     string              `json:"model"`
@@ -46,7 +48,7 @@ type Request struct {
 	Assets map[string]Image `json:"assets,omitempty"`
 }
 
-func (r *Request) MarshalJSON() ([]byte, error) {
+func (r Request) MarshalJSON() ([]byte, error) {
 	questions := make(map[string]apitypes.Question, len(r.Questions))
 	for name, question := range r.Questions {
 		data, err := json.Marshal(question)
