@@ -24,6 +24,7 @@ import (
 func main() {
 	observe := flag.Bool("observe", false, "Report proposed removals without filtering")
 	flag.Parse()
+
 	if err := run(*observe); err != nil {
 		log.Fatal(err)
 	}
@@ -32,9 +33,11 @@ func main() {
 func run(observe bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+
 	if os.Getenv("GEMINI_MODEL") == "" || os.Getenv("GOOGLE_API_KEY") == "" {
 		return errors.New("set GEMINI_MODEL and GOOGLE_API_KEY")
 	}
+
 	client, err := typesafe.New(&typesafe.Options{
 		APIKey:  os.Getenv("TYPESAFE_API_KEY"),
 		BaseURL: os.Getenv("TYPESAFE_BASE_URL"),
@@ -42,9 +45,13 @@ func run(observe bool) error {
 	if err != nil {
 		return err
 	}
+
 	filter, err := contextfilter.New(contextfilter.Config{
-		API: client, Observe: observe, KeepRecentTurns: 1, MinBytes: 1,
-		Model: os.Getenv("TYPESAFE_MODEL"),
+		API:             client,
+		Observe:         observe,
+		KeepRecentTurns: 1,
+		MinBytes:        1,
+		Model:           os.Getenv("TYPESAFE_MODEL"),
 		OnReport: func(_ agent.Context, report contextfilter.Report) {
 			for _, decision := range report.Decisions {
 				fmt.Printf("Messages [%d,%d): relevance=%.3f proposed removal=%t\n",
@@ -59,35 +66,50 @@ func run(observe bool) error {
 	if err != nil {
 		return err
 	}
+
 	llm, err := gemini.NewModel(ctx, os.Getenv("GEMINI_MODEL"), &genai.ClientConfig{
-		APIKey: os.Getenv("GOOGLE_API_KEY"), Backend: genai.BackendGeminiAPI,
+		APIKey:  os.Getenv("GOOGLE_API_KEY"),
+		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
 		return err
 	}
+
 	a, err := llmagent.New(llmagent.Config{
-		Name: "assistant", Model: llm, Instruction: "Answer briefly.",
+		Name:        "assistant",
+		Model:       llm,
+		Instruction: "Answer briefly.",
 	})
 	if err != nil {
 		return err
 	}
+
 	r, err := runner.New(runner.Config{
-		AppName: "context-filter-example", Agent: a, SessionService: session.InMemoryService(), AutoCreateSession: true,
-		PluginConfig: runner.PluginConfig{Plugins: []*plugin.Plugin{filter}},
+		AppName:           "context-filter-example",
+		Agent:             a,
+		SessionService:    session.InMemoryService(),
+		AutoCreateSession: true,
+		PluginConfig: runner.PluginConfig{
+			Plugins: []*plugin.Plugin{filter},
+		},
 	})
 	if err != nil {
 		return err
 	}
+
 	for _, prompt := range []string{
 		"For our task tracker, use Go and SQLite. Reply only: noted.",
 		"Unrelated question: what is 12 times 7?",
 		"Back to our task tracker: which language and database did we agree on?",
 	} {
 		fmt.Println("User:", prompt)
-		for event, err := range r.Run(ctx, "local-user", "demo-session", genai.NewContentFromText(prompt, genai.RoleUser), agent.RunConfig{}) {
+
+		content := genai.NewContentFromText(prompt, genai.RoleUser)
+		for event, err := range r.Run(ctx, "local-user", "demo-session", content, agent.RunConfig{}) {
 			if err != nil {
 				return err
 			}
+
 			if event.Content != nil {
 				for _, part := range event.Content.Parts {
 					if part.Text != "" {
@@ -97,5 +119,6 @@ func run(observe bool) error {
 			}
 		}
 	}
+
 	return nil
 }

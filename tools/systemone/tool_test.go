@@ -1,16 +1,24 @@
+//nolint:cyclop // Runner tests raise package complexity.
 package systemone
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"iter"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/artifact"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool/toolconfirmation"
+	"google.golang.org/genai"
 
 	"github.com/craigh33/adk-go-typesafe/typesafe"
 )
@@ -30,6 +38,8 @@ func (f *fakeAPI) Evaluate(ctx context.Context, request *typesafe.Request) (*typ
 type testContext struct{ agent.StrictContextMock }
 
 func (c *testContext) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
+
+func (c *testContext) Artifacts() agent.Artifacts { return nil }
 
 type runnableTool interface {
 	Run(agent.Context, any) (map[string]any, error)
@@ -80,7 +90,7 @@ func TestToolRoundTrip(t *testing.T) {
 	var schema map[string]any
 	json.Unmarshal(data, &schema)
 	props, ok := schema["properties"].(map[string]any)
-	if !ok || len(props) != 1 || props["state"] == nil {
+	if !ok || len(props) != 2 || props["state"] == nil || props["artifacts"] == nil {
 		t.Fatalf("unexpected generated input schema: %s", data)
 	}
 	result, err := tool.Run(ctx, map[string]any{"state": "No rush"})
@@ -107,6 +117,177 @@ func TestToolRoundTrip(t *testing.T) {
 		if _, err := tool.Run(ctx, args); err == nil {
 			t.Errorf("accepted invalid arguments: %v", args)
 		}
+	}
+}
+
+//nolint:gocognit
+func TestToolImageArtifacts(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, owner string
+		part        *genai.Part
+		wantError   bool
+	}{
+		{name: "PNG", part: genai.NewPartFromBytes([]byte("picture"), "image/png")},
+		{name: "JPEG", part: genai.NewPartFromBytes([]byte("picture"), "image/jpeg")},
+		{name: "missing", wantError: true},
+		{name: "other user", owner: "someone-else", part: genai.NewPartFromBytes([]byte("picture"), "image/png"), wantError: true},
+		{name: "text", part: genai.NewPartFromText("not an image"), wantError: true},
+		{name: "audio", part: genai.NewPartFromBytes([]byte("audio"), "audio/wav"), wantError: true},
+		{name: "empty image", part: genai.NewPartFromBytes(nil, "image/png"), wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := artifact.InMemoryService()
+			if tc.part != nil {
+				owner := tc.owner
+				if owner == "" {
+					owner = "user"
+				}
+
+				if _, err := service.Save(t.Context(), &artifact.SaveRequest{
+					AppName: "test", UserID: owner, SessionID: "session", FileName: "photo.png", Part: tc.part,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			api := &fakeAPI{
+				response: &typesafe.Response{
+					Model: "jev-1.14.0",
+					Answers: map[string]typesafe.Answer{
+						"visible": typesafe.NoulAnswer{Type: "noul", Noul: 1},
+						"target": typesafe.BoxAnswer{
+							Type: "box",
+							Box:  typesafe.BoxCoordinates{Top: 0, Bottom: 1, Left: 0, Right: 1},
+						},
+					},
+				},
+			}
+
+			value, err := New(
+				Config{
+					API:   api,
+					Model: "jev-1.14.0",
+					Questions: map[string]typesafe.Question{
+						"visible": typesafe.Noul{Instructions: "A person in images?"},
+						"target":  typesafe.Box{Instructions: "the person in images"},
+					},
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			callable, ok := value.(runnableTool)
+			if !ok {
+				t.Fatal("tool cannot run")
+			}
+
+			a, err := agent.New(agent.Config{
+				Name: "artifact_test",
+				Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+					return func(yield func(*session.Event, error) bool) {
+						toolCtx := agent.NewToolContext(ctx, "test-call", nil, nil)
+						record, err := callable.Run(
+							toolCtx,
+							map[string]any{
+								"state":     "Look at the photo",
+								"artifacts": []string{"photo.png", "photo.png"},
+							},
+						)
+						if err != nil {
+							yield(nil, err)
+							return
+						}
+
+						data, _ := json.Marshal(api.response)
+						var want map[string]any
+						json.Unmarshal(data, &want)
+						if !reflect.DeepEqual(record, want) {
+							t.Error("box coordinates or null confidence lost from tool response")
+						}
+
+						event := session.NewEvent(ctx, ctx.InvocationID())
+						event.Author = "artifact_test"
+						event.Content = genai.NewContentFromText("done", genai.RoleModel)
+						yield(event, nil)
+					}
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			r, err := runner.New(runner.Config{
+				AppName:           "test",
+				Agent:             a,
+				SessionService:    session.InMemoryService(),
+				ArtifactService:   service,
+				AutoCreateSession: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var runErr error
+			for _, err := range r.Run(t.Context(), "user", "session", genai.NewContentFromText("Evaluate photo.png", genai.RoleUser), agent.RunConfig{}) {
+				if err != nil {
+					runErr = err
+					break
+				}
+			}
+
+			if tc.wantError {
+				if runErr == nil || api.request != nil {
+					t.Fatalf("error = %v, evaluated = %v", runErr, api.request != nil)
+				}
+
+				return
+			}
+
+			if runErr != nil || api.request == nil || len(api.request.Assets) != 1 {
+				t.Fatalf("error = %v, request = %#v", runErr, api.request)
+			}
+
+			if _, ok := api.request.Questions["target"].(typesafe.Box); !ok || api.request.Model != "jev-1.14.0" {
+				t.Error("box question or model lost")
+			}
+
+			state, ok := api.request.State.(map[string]any)
+			if !ok || state["text"] != "Look at the photo" {
+				t.Fatalf("state = %#v", api.request.State)
+			}
+
+			images, ok := state["images"].(map[string]string)
+			if !ok || images["photo.png"] == "" ||
+				!bytes.Equal(api.request.Assets[images["photo.png"]].Data, []byte("picture")) {
+				t.Error("artifact name, reference or bytes lost")
+			}
+		})
+	}
+}
+
+func TestToolImagesRequireArtifactService(t *testing.T) {
+	t.Parallel()
+
+	api := &fakeAPI{}
+	value, err := New(Config{API: api, Questions: map[string]typesafe.Question{"a": typesafe.Noul{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callable, ok := value.(runnableTool)
+	if !ok {
+		t.Fatal("tool cannot run")
+	}
+
+	ctx := &testContext{StrictContextMock: agent.StrictContextMock{Ctx: t.Context()}}
+	_, err = callable.Run(ctx, map[string]any{"state": "Photo", "artifacts": []string{"photo.png"}})
+	if err == nil || !strings.Contains(err.Error(), "artifact service") || api.request != nil {
+		t.Fatalf("error = %v, evaluated = %v", err, api.request != nil)
 	}
 }
 

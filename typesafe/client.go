@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -20,8 +21,9 @@ const (
 	// DefaultModel follows TypeSafe's current Jev model alias.
 	DefaultModel = "jev-latest"
 
-	defaultTimeout   = 10 * time.Second
-	maxResponseBytes = 8 << 20
+	defaultTimeout       = 10 * time.Second
+	maxResponseBytes     = 8 << 20
+	maxImageRequestBytes = 32 << 20
 )
 
 // Options configures New. The zero value uses TYPESAFE_API_KEY, the public API,
@@ -34,6 +36,8 @@ type Options struct {
 	// HTTPClient overrides the default transport and timeout. Redirects are
 	// disabled unless this client supplies its own CheckRedirect policy.
 	HTTPClient *http.Client
+	// Headers adds or overrides request headers. New copies the map and its values.
+	Headers http.Header
 	// Retry enables bounded retries for HTTP 429 and 529. Nil disables retries.
 	Retry *RetryPolicy
 }
@@ -44,13 +48,12 @@ type Evaluator interface {
 }
 
 // Client calls TypeSafe's System One API. It is safe for concurrent use.
-// It does not implement ADK's generative model.LLM interface.
 type Client struct {
-	apiKey   string
 	model    string
 	endpoint string
 	http     *http.Client
 	retry    RetryPolicy
+	headers  http.Header
 }
 
 // New creates a client. A nil options pointer uses the defaults.
@@ -93,15 +96,27 @@ func New(opts *Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	headers := http.Header{
+		"Authorization": {"Bearer " + cfg.APIKey},
+		"Content-Type":  {"application/json"},
+		"Accept":        {"application/json"},
+	}
+	for name, values := range cfg.Headers {
+		headers[http.CanonicalHeaderKey(name)] = slices.Clone(values)
+	}
+
 	return &Client{
-		apiKey: cfg.APIKey, model: cfg.Model,
-		endpoint: base.JoinPath("v1", "systemone").String(), http: &client, retry: retry,
+		model:    cfg.Model,
+		endpoint: base.JoinPath("v1", "systemone").String(),
+		http:     &client,
+		retry:    retry,
+		headers:  headers,
 	}, nil
 }
 
-// APIError reports an unsuccessful HTTP response. Body contains the provider's
-// diagnostic response and may include submitted content; Error omits it so that
-// ordinary error logs do not disclose that content. RetryAfter is the raw header.
+// APIError reports an unsuccessful HTTP response. Body may include submitted
+// content; Error omits it. RetryAfter contains the raw Retry-After header.
 type APIError struct {
 	StatusCode int
 	Body       string
@@ -112,33 +127,42 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("typesafe: API returned HTTP %d", e.StatusCode)
 }
 
-// Evaluate submits one request. It preserves probabilities, confidence, rubric
-// legends, model identity, and usage. Retries are disabled unless Options.Retry
-// is configured. Context cancellation covers HTTP calls and retry delays.
+// Evaluate submits a request and validates the response. Options.Retry controls
+// retries. Context cancellation covers HTTP calls and retry delays.
 // Responses larger than 8 MiB are rejected.
 func (c *Client) Evaluate(ctx context.Context, req *Request) (*Response, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+
 	input := *req
 	if input.Model == "" {
 		input.Model = c.model
 	}
+
 	body, err := json.Marshal(&input)
 	if err != nil {
 		return nil, fmt.Errorf("typesafe: encode request: %w", err)
 	}
+
+	if len(input.Assets) != 0 && len(body) > maxImageRequestBytes {
+		return nil, errors.New("typesafe: image request exceeds 32 MiB limit including base64 data")
+	}
+
 	data, err := c.sendWithRetry(ctx, body)
 	if err != nil {
 		return nil, err
 	}
+
 	var response Response
 	if err := json.Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("typesafe: decode response: %w", err)
 	}
+
 	if err := validateAnswers(&input, &response); err != nil {
 		return nil, fmt.Errorf("typesafe: invalid response: %w", err)
 	}
+
 	return &response, nil
 }
 
@@ -147,9 +171,9 @@ func (c *Client) send(ctx context.Context, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("typesafe: create request: %w", err)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
+
+	httpReq.Header = c.headers.Clone()
+
 	res, err := c.http.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("typesafe: send request: %w", err)
