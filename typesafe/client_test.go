@@ -853,6 +853,52 @@ func TestValidateImageAssets(t *testing.T) {
 	}
 }
 
+func TestValidateImageAssetSizeLimit(t *testing.T) {
+	t.Parallel()
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewGray(image.Rect(0, 0, 280, 280))); err != nil {
+		t.Fatal(err)
+	}
+
+	data := make([]byte, maxImageBytes)
+	copy(data, encoded.Bytes())
+
+	for _, tc := range []struct {
+		name       string
+		size       int
+		references int
+		wantError  bool
+	}{
+		{name: "single maximum image", size: maxImageBytes, references: 1},
+		{name: "encoded limit", size: 12 << 20, references: 2},
+		{name: "base64 padding exceeds limit", size: (12 << 20) + 1, references: 2, wantError: true},
+		{name: "shared image bytes", size: maxImageBytes, references: 32, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := mixedRequest()
+			request.Assets = make(map[string]Image, tc.references)
+			references := make([]string, tc.references)
+			for i := range references {
+				references[i] = "photo-" + strconv.Itoa(i)
+				request.Assets[references[i]] = Image{Data: data[:tc.size]}
+			}
+			request.State = references
+
+			err := request.Validate()
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "32 MiB") {
+					t.Fatalf("oversized assets passed validation before encoding: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestImageRequestSizeLimit(t *testing.T) {
 	t.Parallel()
 

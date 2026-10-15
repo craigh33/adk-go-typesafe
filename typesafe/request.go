@@ -89,7 +89,7 @@ func (r *Request) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire)
 }
 
-// Validate checks JSON shapes, rubric limits, image headers and dimensions.
+// Validate checks JSON shapes, rubric limits, image sizes, headers and dimensions.
 // The API validates image contents and reference usage in the request.
 func (r *Request) Validate() error {
 	if r == nil {
@@ -115,6 +115,7 @@ func (r *Request) Validate() error {
 	}
 
 	referenceBytes := 0
+	encodedImageBytes := 0
 	for reference, asset := range r.Assets {
 		referenceBytes += len(reference)
 
@@ -126,6 +127,11 @@ func (r *Request) Validate() error {
 			)
 		case len(asset.Data) == 0 || len(asset.Data) > maxImageBytes:
 			return fmt.Errorf("typesafe: asset %q: image must contain 1 byte to 16 MiB", reference)
+		}
+
+		encodedImageBytes += base64.StdEncoding.EncodedLen(len(asset.Data))
+		if encodedImageBytes > maxImageRequestBytes {
+			return errors.New("typesafe: image request exceeds 32 MiB limit including base64 data")
 		}
 
 		config, format, err := image.DecodeConfig(bytes.NewReader(asset.Data))

@@ -3,4 +3,4 @@
 IMAGE ?= ../images/empty-park.jpg
 
 run:
-	go run . $(IMAGE)
+	go run . "$(IMAGE)"
