@@ -2,9 +2,14 @@ package typesafe
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg" // Register JPEG decoding.
+	_ "image/png"  // Register PNG decoding.
+	"net/http"
 	"strings"
 
 	apitypes "github.com/craigh33/adk-go-typesafe/internal/typesafe"
@@ -14,53 +19,143 @@ const (
 	maxChoices = 255
 	minLevels  = 1
 	maxLevels  = 10
+
+	maxImageBytes      = 16 * mebibyte
+	minImageDimension  = 256
+	maxImageDimension  = 1568
+	minImagePixels     = 78400
+	maxAssetReference  = 1024
+	maxAssetReferences = 64 * kibibyte
 )
+
+// Image holds upright PNG or JPEG bytes, encoded as base64 without resizing or rotation.
+type Image struct {
+	Data []byte
+}
 
 // Request evaluates named questions against text or structured JSON state.
 // An empty Model uses the client's default. Do not mutate a request while it is
 // being evaluated.
+//
+//nolint:recvcheck // MarshalJSON accepts values; Validate handles nil requests.
 type Request struct {
 	State     any                 `json:"state"`
 	Model     string              `json:"model"`
 	Questions map[string]Question `json:"questions"`
+
+	// Assets maps unique references to images. Each reference must appear in state,
+	// instructions, or criteria. Use random references to avoid matching other text.
+	Assets map[string]Image `json:"assets,omitempty"`
 }
 
-// MarshalJSON maps the ergonomic question interface to the generated wire request.
-func (r *Request) MarshalJSON() ([]byte, error) {
+func (r Request) MarshalJSON() ([]byte, error) {
 	questions := make(map[string]apitypes.Question, len(r.Questions))
 	for name, question := range r.Questions {
 		data, err := json.Marshal(question)
 		if err != nil {
 			return nil, fmt.Errorf("question %q: %w", name, err)
 		}
+
 		var wire apitypes.Question
 		if err := json.Unmarshal(data, &wire); err != nil {
 			return nil, err
 		}
+
 		questions[name] = wire
 	}
-	return json.Marshal(apitypes.SystemOneRequest{State: r.State, Model: r.Model, Questions: questions})
+
+	wire := apitypes.SystemOneRequest{
+		State:     r.State,
+		Model:     r.Model,
+		Questions: questions,
+	}
+
+	if len(r.Assets) != 0 {
+		assets := make(map[string]apitypes.Asset, len(r.Assets))
+		imageType := "image"
+
+		for reference, asset := range r.Assets {
+			data := base64.StdEncoding.EncodeToString(asset.Data)
+			format := apitypes.AssetFormat(strings.TrimPrefix(http.DetectContentType(asset.Data), "image/"))
+
+			assets[reference] = apitypes.Asset{
+				Type:       &imageType,
+				Format:     &format,
+				DataBase64: &data,
+			}
+		}
+
+		wire.Assets = &assets
+	}
+
+	return json.Marshal(wire)
 }
 
-// Validate checks the request's JSON shapes and documented rubric limits.
+// Validate checks JSON shapes, rubric limits, image sizes, headers and dimensions.
+// The API validates image contents and reference usage in the request.
 func (r *Request) Validate() error {
 	if r == nil {
 		return errors.New("typesafe: request is required")
 	}
+
 	if err := validateContent(r.State, false); err != nil {
 		return fmt.Errorf("typesafe: state: %w", err)
 	}
+
 	if len(r.Questions) == 0 {
 		return errors.New("typesafe: questions must not be empty")
 	}
+
 	for name, question := range r.Questions {
 		if strings.TrimSpace(name) == "" {
 			return errors.New("typesafe: question name must not be blank")
 		}
+
 		if err := validateQuestion(question); err != nil {
 			return fmt.Errorf("typesafe: question %q: %w", name, err)
 		}
 	}
+
+	referenceBytes := 0
+	encodedImageBytes := 0
+	for reference, asset := range r.Assets {
+		referenceBytes += len(reference)
+
+		switch {
+		case strings.TrimSpace(reference) == "" || len(reference) > maxAssetReference ||
+			referenceBytes > maxAssetReferences:
+			return fmt.Errorf(
+				"typesafe: asset references must be nonblank, at most %d bytes each and %d KiB combined",
+				maxAssetReference, maxAssetReferences/kibibyte,
+			)
+		case len(asset.Data) == 0 || len(asset.Data) > maxImageBytes:
+			return fmt.Errorf(
+				"typesafe: asset %q: image must contain 1 byte to %d MiB", reference, maxImageBytes/mebibyte,
+			)
+		}
+
+		encodedImageBytes += base64.StdEncoding.EncodedLen(len(asset.Data))
+		if encodedImageBytes > maxImageRequestBytes {
+			return fmt.Errorf(
+				"typesafe: image request exceeds %d MiB limit including base64 data",
+				maxImageRequestBytes/mebibyte,
+			)
+		}
+
+		config, format, err := image.DecodeConfig(bytes.NewReader(asset.Data))
+		switch {
+		case err != nil || (format != "png" && format != "jpeg"):
+			return fmt.Errorf("typesafe: asset %q: expected a PNG or JPEG image", reference)
+		case config.Width < minImageDimension || config.Height < minImageDimension ||
+			config.Width > maxImageDimension || config.Height > maxImageDimension ||
+			config.Width*config.Height < minImagePixels:
+			return fmt.Errorf(
+				"typesafe: asset %q: image sides must be %d to %d pixels with at least %d total pixels",
+				reference, minImageDimension, maxImageDimension, minImagePixels,
+			)
+		}
+	}
+
 	return nil
 }
 
@@ -102,8 +197,10 @@ func validateQuestion(question Question) error {
 		return validateScoreCriteria(wire.Criteria)
 	case noulType:
 		return validateNoulCriteria(wire.Criteria)
+	case boxType:
+		return nil
 	default:
-		return errors.New("question must be a non-nil Choice, Score, or Noul")
+		return errors.New("question must be a non-nil Choice, Score, Noul, or Box")
 	}
 }
 
