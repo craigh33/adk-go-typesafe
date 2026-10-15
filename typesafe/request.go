@@ -20,12 +20,12 @@ const (
 	minLevels  = 1
 	maxLevels  = 10
 
-	maxImageBytes      = 16 << 20
+	maxImageBytes      = 16 * mebibyte
 	minImageDimension  = 256
 	maxImageDimension  = 1568
 	minImagePixels     = 78400
 	maxAssetReference  = 1024
-	maxAssetReferences = 64 << 10
+	maxAssetReferences = 64 * kibibyte
 )
 
 // Image holds upright PNG or JPEG bytes, encoded as base64 without resizing or rotation.
@@ -124,16 +124,22 @@ func (r *Request) Validate() error {
 		switch {
 		case strings.TrimSpace(reference) == "" || len(reference) > maxAssetReference ||
 			referenceBytes > maxAssetReferences:
-			return errors.New(
-				"typesafe: asset references must be nonblank, at most 1024 bytes each and 64 KiB combined",
+			return fmt.Errorf(
+				"typesafe: asset references must be nonblank, at most %d bytes each and %d KiB combined",
+				maxAssetReference, maxAssetReferences/kibibyte,
 			)
 		case len(asset.Data) == 0 || len(asset.Data) > maxImageBytes:
-			return fmt.Errorf("typesafe: asset %q: image must contain 1 byte to 16 MiB", reference)
+			return fmt.Errorf(
+				"typesafe: asset %q: image must contain 1 byte to %d MiB", reference, maxImageBytes/mebibyte,
+			)
 		}
 
 		encodedImageBytes += base64.StdEncoding.EncodedLen(len(asset.Data))
 		if encodedImageBytes > maxImageRequestBytes {
-			return errors.New("typesafe: image request exceeds 32 MiB limit including base64 data")
+			return fmt.Errorf(
+				"typesafe: image request exceeds %d MiB limit including base64 data",
+				maxImageRequestBytes/mebibyte,
+			)
 		}
 
 		config, format, err := image.DecodeConfig(bytes.NewReader(asset.Data))
@@ -144,8 +150,8 @@ func (r *Request) Validate() error {
 			config.Width > maxImageDimension || config.Height > maxImageDimension ||
 			config.Width*config.Height < minImagePixels:
 			return fmt.Errorf(
-				"typesafe: asset %q: image sides must be 256 to 1568 pixels with at least 78400 total pixels",
-				reference,
+				"typesafe: asset %q: image sides must be %d to %d pixels with at least %d total pixels",
+				reference, minImageDimension, maxImageDimension, minImagePixels,
 			)
 		}
 	}

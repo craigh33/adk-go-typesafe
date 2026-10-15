@@ -21,9 +21,12 @@ const (
 	// DefaultModel follows TypeSafe's current Jev model alias.
 	DefaultModel = "jev-latest"
 
+	kibibyte = 1 << 10
+	mebibyte = 1 << 20
+
 	defaultTimeout       = 10 * time.Second
-	maxResponseBytes     = 8 << 20
-	maxImageRequestBytes = 32 << 20
+	maxResponseBytes     = 8 * mebibyte
+	maxImageRequestBytes = 32 * mebibyte
 )
 
 // Options configures New. The zero value uses TYPESAFE_API_KEY, the public API,
@@ -37,6 +40,7 @@ type Options struct {
 	// disabled unless this client supplies its own CheckRedirect policy.
 	HTTPClient *http.Client
 	// Headers adds or overrides request headers. New copies the map and its values.
+	// Header names must be unique ignoring case.
 	Headers http.Header
 	// Retry enables bounded retries for HTTP 429 and 529. Nil disables retries.
 	Retry *RetryPolicy
@@ -102,8 +106,14 @@ func New(opts *Options) (*Client, error) {
 		"Content-Type":  {"application/json"},
 		"Accept":        {"application/json"},
 	}
+	seen := make(map[string]struct{}, len(cfg.Headers))
 	for name, values := range cfg.Headers {
-		headers[http.CanonicalHeaderKey(name)] = slices.Clone(values)
+		name = http.CanonicalHeaderKey(name)
+		if _, exists := seen[name]; exists {
+			return nil, fmt.Errorf("typesafe: duplicate header %q", name)
+		}
+		seen[name] = struct{}{}
+		headers[name] = slices.Clone(values)
 	}
 
 	return &Client{
@@ -146,7 +156,10 @@ func (c *Client) Evaluate(ctx context.Context, req *Request) (*Response, error) 
 	}
 
 	if len(input.Assets) != 0 && len(body) > maxImageRequestBytes {
-		return nil, errors.New("typesafe: image request exceeds 32 MiB limit including base64 data")
+		return nil, fmt.Errorf(
+			"typesafe: image request exceeds %d MiB limit including base64 data",
+			maxImageRequestBytes/mebibyte,
+		)
 	}
 
 	data, err := c.sendWithRetry(ctx, body)
@@ -184,7 +197,7 @@ func (c *Client) send(ctx context.Context, body []byte) ([]byte, error) {
 		return nil, fmt.Errorf("typesafe: read response: %w", err)
 	}
 	if len(data) > maxResponseBytes {
-		return nil, errors.New("typesafe: response exceeds 8 MiB limit")
+		return nil, fmt.Errorf("typesafe: response exceeds %d MiB limit", maxResponseBytes/mebibyte)
 	}
 	if res.StatusCode != http.StatusOK {
 		return nil, &APIError{StatusCode: res.StatusCode, Body: string(data), RetryAfter: res.Header.Get("Retry-After")}

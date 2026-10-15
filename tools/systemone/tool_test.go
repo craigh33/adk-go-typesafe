@@ -6,6 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"iter"
 	"math"
 	"reflect"
@@ -124,18 +127,48 @@ func TestToolRoundTrip(t *testing.T) {
 func TestToolImageArtifacts(t *testing.T) {
 	t.Parallel()
 
+	var pngData, jpegData bytes.Buffer
+	picture := image.NewGray(image.Rect(0, 0, 280, 280))
+	if err := png.Encode(&pngData, picture); err != nil {
+		t.Fatal(err)
+	}
+	if err := jpeg.Encode(&jpegData, picture, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	largeImage := make([]byte, 16<<20)
+	copy(largeImage, pngData.Bytes())
+
 	for _, tc := range []struct {
-		name, owner string
-		part        *genai.Part
-		wantError   bool
+		name, owner    string
+		part           *genai.Part
+		extraFiles     []string
+		extraArtifacts []string
+		wantError      string
 	}{
-		{name: "PNG", part: genai.NewPartFromBytes([]byte("picture"), "image/png")},
-		{name: "JPEG", part: genai.NewPartFromBytes([]byte("picture"), "image/jpeg")},
-		{name: "missing", wantError: true},
-		{name: "other user", owner: "someone-else", part: genai.NewPartFromBytes([]byte("picture"), "image/png"), wantError: true},
-		{name: "text", part: genai.NewPartFromText("not an image"), wantError: true},
-		{name: "audio", part: genai.NewPartFromBytes([]byte("audio"), "audio/wav"), wantError: true},
-		{name: "empty image", part: genai.NewPartFromBytes(nil, "image/png"), wantError: true},
+		{name: "PNG", part: genai.NewPartFromBytes(pngData.Bytes(), "image/png")},
+		{name: "JPEG", part: genai.NewPartFromBytes(jpegData.Bytes(), "image/jpeg")},
+		{name: "missing", wantError: "load artifact"},
+		{
+			name: "other user", owner: "someone-else",
+			part: genai.NewPartFromBytes(pngData.Bytes(), "image/png"), wantError: "load artifact",
+		},
+		{name: "text", part: genai.NewPartFromText("not an image"), wantError: "inline image data"},
+		{name: "audio", part: genai.NewPartFromBytes([]byte("audio"), "audio/wav"), wantError: "PNG or JPEG"},
+		{name: "empty image", part: genai.NewPartFromBytes(nil, "image/png"), wantError: "no image data"},
+		{
+			name:           "invalid image stops loading",
+			part:           genai.NewPartFromBytes([]byte("picture"), "image/png"),
+			extraArtifacts: []string{"missing.png"},
+			wantError:      "expected a PNG or JPEG",
+		},
+		{
+			name:           "combined image size stops loading",
+			part:           genai.NewPartFromBytes(largeImage, "image/png"),
+			extraFiles:     []string{"second.png"},
+			extraArtifacts: []string{"second.png", "missing.png"},
+			wantError:      "32 MiB",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -147,10 +180,13 @@ func TestToolImageArtifacts(t *testing.T) {
 					owner = "user"
 				}
 
-				if _, err := service.Save(t.Context(), &artifact.SaveRequest{
-					AppName: "test", UserID: owner, SessionID: "session", FileName: "photo.png", Part: tc.part,
-				}); err != nil {
-					t.Fatal(err)
+				files := append([]string{"photo.png"}, tc.extraFiles...)
+				for _, name := range files {
+					if _, err := service.Save(t.Context(), &artifact.SaveRequest{
+						AppName: "test", UserID: owner, SessionID: "session", FileName: name, Part: tc.part,
+					}); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 
@@ -186,6 +222,8 @@ func TestToolImageArtifacts(t *testing.T) {
 				t.Fatal("tool cannot run")
 			}
 
+			artifacts := append([]string{"photo.png", "photo.png"}, tc.extraArtifacts...)
+
 			a, err := agent.New(agent.Config{
 				Name: "artifact_test",
 				Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
@@ -195,7 +233,7 @@ func TestToolImageArtifacts(t *testing.T) {
 							toolCtx,
 							map[string]any{
 								"state":     "Look at the photo",
-								"artifacts": []string{"photo.png", "photo.png"},
+								"artifacts": artifacts,
 							},
 						)
 						if err != nil {
@@ -240,8 +278,8 @@ func TestToolImageArtifacts(t *testing.T) {
 				}
 			}
 
-			if tc.wantError {
-				if runErr == nil || api.request != nil {
+			if tc.wantError != "" {
+				if runErr == nil || !strings.Contains(runErr.Error(), tc.wantError) || api.request != nil {
 					t.Fatalf("error = %v, evaluated = %v", runErr, api.request != nil)
 				}
 
@@ -263,7 +301,7 @@ func TestToolImageArtifacts(t *testing.T) {
 
 			images, ok := state["images"].(map[string]string)
 			if !ok || images["photo.png"] == "" ||
-				!bytes.Equal(api.request.Assets[images["photo.png"]].Data, []byte("picture")) {
+				!bytes.Equal(api.request.Assets[images["photo.png"]].Data, tc.part.InlineData.Data) {
 				t.Error("artifact name, reference or bytes lost")
 			}
 		})

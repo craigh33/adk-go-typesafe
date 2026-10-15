@@ -107,6 +107,9 @@ func New(cfg Config) (tool.Tool, error) {
 			reference := rand.Text()
 			images[name] = reference
 			call.Assets[reference] = typesafe.Image{Data: blob.Data}
+			if err := call.Validate(); err != nil {
+				return nil, fmt.Errorf("systemone tool: artifact %q: %w", name, err)
+			}
 		}
 
 		if len(images) != 0 {

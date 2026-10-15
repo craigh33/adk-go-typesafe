@@ -579,6 +579,21 @@ func TestRequestHeaders(t *testing.T) {
 	}
 }
 
+func TestNewRejectsDuplicateHeaders(t *testing.T) {
+	t.Parallel()
+
+	for _, headers := range []http.Header{
+		{"X-Tag": {"first"}, "x-tag": {"second"}},
+		{"Accept": {"application/json"}, "accept": {"text/plain"}},
+		{"X-Tag": nil, "x-tag": {"second"}},
+	} {
+		if _, err := New(&Options{APIKey: "test-key", Headers: headers}); err == nil ||
+			!strings.Contains(err.Error(), "duplicate header") {
+			t.Errorf("headers = %v, error = %v", headers, err)
+		}
+	}
+}
+
 func TestNewOptions(t *testing.T) {
 	t.Setenv("TYPESAFE_API_KEY", " env-key ")
 	client, err := New(nil)
