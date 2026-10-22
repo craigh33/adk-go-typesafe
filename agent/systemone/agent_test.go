@@ -1,6 +1,7 @@
 package systemone
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -93,7 +94,7 @@ func runAgent(t *testing.T, a agent.Agent, content *genai.Content) ([]*session.E
 	return events, saved.Session.State(), runErr
 }
 
-//nolint:gocognit // Each table case verifies the complete observable result.
+//nolint:gocognit
 func TestRoutingAndState(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -179,6 +180,122 @@ func TestClassificationStructuredState(t *testing.T) {
 	}
 	if _, err := saved.Get("triage"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+//nolint:gocognit
+func TestClassificationInlineImages(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		parts     []*genai.Part
+		images    int
+		wantError string
+	}{
+		{
+			name: "text and images",
+			parts: []*genai.Part{
+				genai.NewPartFromText("Compare these"),
+				genai.NewPartFromBytes([]byte("first"), "image/png"),
+				nil,
+				genai.NewPartFromBytes([]byte("second"), "image/jpeg"),
+				{Text: "hidden", InlineData: &genai.Blob{Data: []byte("hidden"), MIMEType: "image/png"}, Thought: true},
+			},
+			images: 2,
+		},
+		{name: "image only", parts: []*genai.Part{genai.NewPartFromBytes([]byte("first"), "image/jpg")}, images: 1},
+		{name: "empty image", parts: []*genai.Part{genai.NewPartFromBytes(nil, "image/png")}, wantError: "PNG or JPEG"},
+		{name: "audio", parts: []*genai.Part{genai.NewPartFromBytes([]byte("audio"), "audio/wav")}, wantError: "PNG or JPEG"},
+		{name: "file URI", parts: []*genai.Part{genai.NewPartFromURI("gs://bucket/photo.png", "image/png")}, wantError: "file URI"},
+		{name: "no input", wantError: "text or an inline image"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			calls := 0
+			response := &typesafe.Response{
+				Model: "jev-1.14.0",
+				Answers: map[string]typesafe.Answer{
+					"target": typesafe.BoxAnswer{
+						Type: "box",
+						Box:  typesafe.BoxCoordinates{Top: 0, Bottom: 1, Left: 0, Right: 1},
+					},
+				},
+			}
+			cfg := config(fakeAPI(func(_ context.Context, request *typesafe.Request) (*typesafe.Response, error) {
+				calls++
+				state, ok := request.State.(string)
+				if !ok || len(request.Assets) != tc.images || strings.Contains(state, "hidden") {
+					t.Errorf("incorrect image projection: %#v", request)
+				}
+
+				for reference, asset := range request.Assets {
+					if !strings.Contains(state, reference) ||
+						(!bytes.Equal(asset.Data, []byte("first")) && !bytes.Equal(asset.Data, []byte("second"))) {
+						t.Error("image bytes or reference lost")
+					}
+				}
+
+				if tc.images == 2 && !strings.Contains(state, "Compare these") {
+					t.Error("user text lost")
+				}
+
+				if _, ok := request.Questions["target"].(typesafe.Box); !ok || request.Model != "jev-1.14.0" {
+					t.Error("box question or model lost")
+				}
+
+				return response, nil
+			}))
+			cfg.Model = "jev-1.14.0"
+			cfg.Questions = map[string]typesafe.Question{
+				"target": typesafe.Box{Instructions: "the target in the image"},
+			}
+
+			a, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			content := &genai.Content{Role: genai.RoleUser, Parts: tc.parts}
+			before, _ := json.Marshal(content)
+			events, saved, err := runAgent(t, a, content)
+			if tc.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) || calls != 0 {
+					t.Fatalf("error = %v, API calls = %d", err, calls)
+				}
+
+				return
+			}
+
+			if err != nil || calls != 1 {
+				t.Fatalf("error = %v, API calls = %d", err, calls)
+			}
+
+			data, _ := json.Marshal(response)
+			var want map[string]any
+			json.Unmarshal(data, &want)
+
+			assessment, err := saved.Get("assessment")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !reflect.DeepEqual(assessment, want) || len(events) != 1 {
+				t.Fatal("box coordinates or null confidence lost from ADK assessment")
+			}
+
+			var emitted map[string]any
+			if err := json.Unmarshal([]byte(events[0].Content.Parts[0].Text), &emitted); err != nil ||
+				!reflect.DeepEqual(emitted, want) {
+				t.Error("box coordinates or null confidence lost from ADK assessment")
+			}
+
+			after, _ := json.Marshal(content)
+			if !bytes.Equal(before, after) {
+				t.Error("projection mutated the original ADK content")
+			}
+		})
 	}
 }
 

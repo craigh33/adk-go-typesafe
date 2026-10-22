@@ -8,7 +8,7 @@
 
 # adk-go-typesafe
 
-[TypeSafe AI](https://typesafe.ai/) System One integration for [adk-go](https://github.com/google/adk-go), bringing Choice, Score, and Noul primitives to Go agents and workflows with models such as [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev).
+[TypeSafe AI](https://typesafe.ai/) System One integration for [adk-go](https://github.com/google/adk-go), bringing Choice, Score, Noul, and Box primitives to Go agents and workflows with models such as [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev).
 
 Provides a typed HTTP client, ADK function tool, classification and routing agent, assessment callbacks, and dynamic context filtering. The client is a temporary bridge until TypeSafe publishes a Go SDK; its API types are generated from TypeSafe's OpenAPI schema.
 
@@ -56,9 +56,54 @@ department := response.Answers["department"].(typesafe.ChoiceAnswer)
 fmt.Println(department.Choice, department.Confidence, department.Probabilities)
 ```
 
-`Choice` selects a named option, `Score` evaluates ordered levels, and `Noul` returns the probability of yes. Responses retain probabilities, confidence, score legends, model identity, and token usage. State accepts text, JSON objects, or arrays; question instructions and criteria can also contain structured JSON.
+`Choice` selects a named option, `Score` evaluates ordered levels, `Noul` returns the probability of yes, and `Box` locates a target in an image. Responses retain probabilities, confidence, score legends, box coordinates, model identity, and token usage. State accepts text, JSON objects, or arrays; question instructions and criteria can also contain structured JSON.
 
-The default model is `jev-latest`. Set `Options.Model` for a client default or `Request.Model` for a single evaluation. `Options` also accepts an API key, base URL, and HTTP client. The default timeout is ten seconds; context cancellation is preserved. Use `errors.As` with `*typesafe.APIError` to inspect `StatusCode` and `RetryAfter`.
+The default model is `jev-latest`. Set `Options.Model` for a client default or `Request.Model` for a single evaluation. `Options` also accepts an API key, base URL, HTTP client, and `Headers` (`http.Header`) to add or override request headers. The client copies configured headers and preserves them across retries. The default timeout is ten seconds; context cancellation is preserved. Use `errors.As` with `*typesafe.APIError` to inspect `StatusCode` and `RetryAfter`.
+
+### Images
+
+Enable experimental image support through `Options.Headers`, attach PNG or JPEG bytes through `Request.Assets`, and place each asset's reference in state, instructions, or criteria:
+
+```go
+client, err := typesafe.New(&typesafe.Options{
+    Headers: http.Header{"Typesafe-Danger-Zone-Images": {"true"}},
+})
+if err != nil {
+    return err
+}
+
+data, err := os.ReadFile("examples/images/person-indoors.jpg")
+if err != nil {
+    return err
+}
+
+reference := rand.Text() // crypto/rand; use a unique reference to avoid text collisions.
+
+response, err := client.Evaluate(ctx, &typesafe.Request{
+    State: map[string]any{"photo": reference},
+    Assets: map[string]typesafe.Image{reference: {Data: data}},
+    Questions: map[string]typesafe.Question{
+        "person_present": typesafe.Noul{Instructions: "Is there a person in `photo`?"},
+    },
+})
+```
+
+The client detects the format and base64-encodes the bytes in JSON. Files must be at most 16 MiB, each side 256–1568 pixels, and at least 78,400 pixels in total. Encoded image requests, including base64 and text, are capped at 32 MiB. Prepare upright, still images before sending; the client does not resize or rotate them. Every asset must be referenced, including when nested or embedded in a longer string. See [TypeSafe's image documentation](https://docs.typesafe.ai/images) and the [image example](examples/typesafe-images).
+
+### Box questions
+
+Add a `typesafe.Box` question to an image request and select `Model: "jev-1.14.0"` or `"jev-preview"`:
+
+```go
+Questions: map[string]typesafe.Question{
+    "bench_present": typesafe.Noul{Instructions: "Is there a park bench in `photo`?"},
+    "bench": typesafe.Box{Instructions: "the park bench in `photo`"},
+},
+```
+
+Read the result as `response.Answers["bench"].(typesafe.BoxAnswer)`. `Box.Top`, `Box.Bottom`, `Box.Left`, and `Box.Right` are normalized edges between zero and one. `Confidence` is a `*float64`; nil preserves the API's `null` when confidence is unavailable. A Box always returns coordinates, even for an absent target, so use the accompanying Noul answer to decide whether to use it.
+
+Box questions use the same images header configured above and work with the ADK tool and classification agent's existing image inputs. See the [runnable Box example](examples/typesafe-box) and [TypeSafe's Box documentation](https://docs.typesafe.ai/primitives/box).
 
 ### Opt-in retries
 
@@ -85,7 +130,7 @@ if err != nil {
 // Add evaluate to llmagent.Config.Tools.
 ```
 
-The application fixes the questions and rubrics; the calling agent supplies only text in `state`. ADK generates the tool's input schema from its Go input type. The tool returns the full structured evaluation and works with ADK models that support function tools, including your Bedrock, Ollama, or Kronk setup. For structured state, use the client directly.
+The application fixes the questions and rubrics; the calling agent supplies text in `state` and optional image artifact names in `artifacts`. Configure the runner's `ArtifactService` to load images through `ctx.Artifacts().Load`. The tool evaluates them as `{"text": state, "images": {filename: image}}` and retains text-only state as a string. ADK generates the tool's input schema from its Go input type. The tool returns the full structured evaluation and works with ADK models that support function tools, including your Bedrock, Ollama, or Kronk setup. For application-defined structured state, use the client directly.
 
 All adapters depend on `typesafe.Evaluator`, so the HTTP implementation can later be replaced by an adapter for the official SDK. The tool's existing `EvaluationAPI` name remains an alias. No ADK core changes or `model.LLM` implementation are required.
 
@@ -113,7 +158,7 @@ triage, err := systemoneagent.New(systemoneagent.Config{
 
 Supply existing ADK children in `Routes` and `Fallback`, then use `triage` with an ADK runner. Confidence at or above the threshold selects the matching child; low confidence or an unmapped choice selects the fallback. API failures stop execution. The full assessment, usage, and routing decision are saved in session state under `OutputKey` (default: the agent's name) before the child runs. The iterator emits the classifier assessment followed by the child's events; consume the full iterator to run the child.
 
-Omit `Routing` for a standalone classification agent. `State` defaults to the initiating user's text; provide a `func(agent.InvocationContext) (any, error)` for structured input or session context. Treat question definitions as immutable after construction. See the [Bedrock routing example](examples/bedrock-routing) for complete wiring.
+Omit `Routing` for a standalone classification agent. By default it evaluates the initiating user's text and inline PNG/JPEG parts, including those created with `genai.NewPartFromBytes`. Images are converted to TypeSafe assets automatically. Provide `State func(agent.InvocationContext) (any, error)` to override that projection with structured input or session context. Treat question definitions as immutable after construction. See the [Bedrock routing example](examples/bedrock-routing) and [ADK image example](examples/systemone-images) for complete wiring.
 
 ## Assessment callbacks
 
@@ -149,7 +194,10 @@ Historical turns are reviewed in sequential batches capped at 64 KiB of JSON (`M
 
 ## Examples
 
-- [`examples/typesafe-evaluate`](examples/typesafe-evaluate): text and structured state with all three question types.
+- [`examples/typesafe-evaluate`](examples/typesafe-evaluate): text and structured state with Choice, Score, and Noul.
+- [`examples/typesafe-images`](examples/typesafe-images): evaluate a PNG or JPEG with image assets.
+- [`examples/typesafe-box`](examples/typesafe-box): locate a park bench with normalized image coordinates.
+- [`examples/systemone-images`](examples/systemone-images): classify native ADK image parts.
 - [`examples/systemone-tool`](examples/systemone-tool): a Gemini-backed ADK agent calling an application-configured tool.
 - [`examples/bedrock-routing`](examples/bedrock-routing): Jev routing to Bedrock-backed ADK children, with confidence fallback.
 - [`examples/systemone-assessment`](examples/systemone-assessment): model and tool assessment callbacks.

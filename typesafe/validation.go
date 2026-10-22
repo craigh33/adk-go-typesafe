@@ -27,8 +27,6 @@ func validateAnswers(req *Request, response *Response) error {
 }
 
 func validateAnswer(question Question, answer Answer) error {
-	// Read the same criteria that were serialized to the API, including pointer
-	// question values and structured rubric descriptions.
 	data, err := json.Marshal(question)
 	if err != nil {
 		return err
@@ -54,6 +52,16 @@ func validateAnswer(question Question, answer Answer) error {
 	case NoulAnswer:
 		if value.Noul < 0 || value.Noul > 1 {
 			return errors.New("noul must be between zero and one")
+		}
+	case BoxAnswer:
+		box := value.Box
+		switch {
+		case min(box.Top, box.Bottom, box.Left, box.Right) < 0 || max(box.Top, box.Bottom, box.Left, box.Right) > 1:
+			return errors.New("box edges must be between zero and one")
+		case box.Top >= box.Bottom || box.Left >= box.Right:
+			return errors.New("box must have top < bottom and left < right")
+		case value.Confidence != nil && (*value.Confidence < 0 || *value.Confidence > 1):
+			return errors.New("confidence must be between zero and one")
 		}
 	}
 	return nil

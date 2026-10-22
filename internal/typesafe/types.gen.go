@@ -6,13 +6,132 @@ package typesafe
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for AssetFormat.
+const (
+	Jpeg AssetFormat = "jpeg"
+	Jpg  AssetFormat = "jpg"
+	Png  AssetFormat = "png"
+)
+
+// Valid indicates whether the value is a known member of the AssetFormat enum.
+func (e AssetFormat) Valid() bool {
+	switch e {
+	case Jpeg:
+		return true
+	case Jpg:
+		return true
+	case Png:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages.
+const (
+	SystemoneV1SystemonePostParamsTypeSafeDangerZoneImagesTrue SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages = "true"
+)
+
+// Valid indicates whether the value is a known member of the SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages enum.
+func (e SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages) Valid() bool {
+	switch e {
+	case SystemoneV1SystemonePostParamsTypeSafeDangerZoneImagesTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext.
+const (
+	SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContextTrue SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext = "true"
+)
+
+// Valid indicates whether the value is a known member of the SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext enum.
+func (e SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext) Valid() bool {
+	switch e {
+	case SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContextTrue:
+		return true
+	default:
+		return false
+	}
+}
 
 // Answer An answer whose type matches the corresponding question.
 type Answer struct {
 	union json.RawMessage
+}
+
+// Asset An image that replaces its placeholder: its bytes in data_base64 with their format, or, in a multipart request, the name of the image part that holds them. Requests with images must send the header TypeSafe-Danger-Zone-Images: true.
+type Asset struct {
+	// DataBase64 Base64-encoded image data.
+	DataBase64 *string `json:"data_base64,omitempty"`
+
+	// Format The image format, required with data_base64. The actual format is detected from the bytes.
+	Format *AssetFormat `json:"format,omitempty"`
+
+	// Part In a multipart request, the name of the image part this asset uses. With part, data_base64 is ignored.
+	Part *string `json:"part,omitempty"`
+
+	// Type Identifies an image asset.
+	Type *string `json:"type,omitempty"`
+}
+
+// AssetFormat The image format, required with data_base64. The actual format is detected from the bytes.
+type AssetFormat string
+
+// BoxAnswer A located box with normalized edge coordinates and confidence.
+type BoxAnswer struct {
+	// Box Normalized box edges. Vertical coordinates are measured from the top of the image; horizontal coordinates are measured from the left.
+	Box BoxCoordinates `json:"box"`
+
+	// Confidence Confidence for the given box, from 0 to 1, with 1 being more confident. Null when the model does not provide confidence.
+	//
+	// Examples: null, 0.9
+	Confidence *float64 `json:"confidence"`
+
+	// Type Identifies a box answer.
+	//
+	// Examples: box
+	Type string `json:"type"`
+}
+
+// BoxCoordinates Normalized box edges. Vertical coordinates are measured from the top of the image; horizontal coordinates are measured from the left.
+type BoxCoordinates struct {
+	// Bottom Bottom edge of the box, as a fraction of image height from the top (0-1).
+	//
+	// Examples: 0.66
+	Bottom float64 `json:"bottom"`
+
+	// Left Left edge of the box, as a fraction of image width from the left (0-1).
+	//
+	// Examples: 0.19
+	Left float64 `json:"left"`
+
+	// Right Right edge of the box, as a fraction of image width from the left (0-1).
+	//
+	// Examples: 0.68
+	Right float64 `json:"right"`
+
+	// Top Top edge of the box, as a fraction of image height from the top (0-1).
+	//
+	// Examples: 0.2
+	Top float64 `json:"top"`
+}
+
+// BoxQuestion A question that locates what its instructions describe in the request's image. Requests with box questions must send the header TypeSafe-Danger-Zone-Images: true.
+type BoxQuestion struct {
+	// Instructions What to locate in the image.
+	Instructions any `json:"instructions,omitempty"`
+
+	// Type Identifies a box question.
+	Type string `json:"type"`
 }
 
 // ChoiceAnswer The selected choice, confidence, and probabilities for a choice question.
@@ -187,6 +306,9 @@ type ScoreQuestion struct {
 
 // SystemOneRequest Content and named questions to evaluate together using a TypeSafe model.
 type SystemOneRequest struct {
+	// Assets Media assets keyed by an opaque placeholder (recommend a per-image UUID). Each placeholder, wherever it appears as or inside a string in state, question instructions, or criteria, is replaced with the asset. Image assets require a vision-language model.
+	Assets *map[string]Asset `json:"assets,omitempty"`
+
 	// Model Name or alias of the model to use. Available names are returned by GET /v1/models.
 	//
 	// Examples: jev-latest
@@ -271,8 +393,99 @@ type ValidationError_Loc_Item struct {
 	union json.RawMessage
 }
 
+// SystemoneV1SystemonePostMultipartBody defines parameters for SystemoneV1SystemonePost.
+type SystemoneV1SystemonePostMultipartBody struct {
+	// Request The JSON request, as the first part.
+	Request              interface{}                   `json:"request"`
+	AdditionalProperties map[string]openapi_types.File `json:"-"`
+}
+
+// SystemoneV1SystemonePostParams defines parameters for SystemoneV1SystemonePost.
+type SystemoneV1SystemonePostParams struct {
+	// TypeSafeDangerZoneImages Set to true to use assets or box questions.
+	TypeSafeDangerZoneImages *SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages `json:"TypeSafe-Danger-Zone-Images,omitempty"`
+
+	// TypeSafeDangerZoneLongContext Set to true to use long context.
+	TypeSafeDangerZoneLongContext *SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext `json:"TypeSafe-Danger-Zone-Long-Context,omitempty"`
+}
+
+// SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages defines parameters for SystemoneV1SystemonePost.
+type SystemoneV1SystemonePostParamsTypeSafeDangerZoneImages string
+
+// SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext defines parameters for SystemoneV1SystemonePost.
+type SystemoneV1SystemonePostParamsTypeSafeDangerZoneLongContext string
+
 // SystemoneV1SystemonePostJSONRequestBody defines body for SystemoneV1SystemonePost for application/json ContentType.
 type SystemoneV1SystemonePostJSONRequestBody = SystemOneRequest
+
+// SystemoneV1SystemonePostMultipartRequestBody defines body for SystemoneV1SystemonePost for multipart/form-data ContentType.
+type SystemoneV1SystemonePostMultipartRequestBody SystemoneV1SystemonePostMultipartBody
+
+// Getter for additional properties for SystemoneV1SystemonePostMultipartBody. Returns the specified
+// element and whether it was found
+func (a SystemoneV1SystemonePostMultipartBody) Get(fieldName string) (value openapi_types.File, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for SystemoneV1SystemonePostMultipartBody
+func (a *SystemoneV1SystemonePostMultipartBody) Set(fieldName string, value openapi_types.File) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]openapi_types.File)
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for SystemoneV1SystemonePostMultipartBody to handle AdditionalProperties
+func (a *SystemoneV1SystemonePostMultipartBody) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["request"]; found {
+		err = json.Unmarshal(raw, &a.Request)
+		if err != nil {
+			return fmt.Errorf("error reading 'request': %w", err)
+		}
+		delete(object, "request")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]openapi_types.File)
+		for fieldName, fieldBuf := range object {
+			var fieldVal openapi_types.File
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for SystemoneV1SystemonePostMultipartBody to handle AdditionalProperties
+func (a SystemoneV1SystemonePostMultipartBody) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["request"], err = json.Marshal(a.Request)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'request': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // AsNoulAnswer returns the union data inside the Answer as a NoulAnswer
 func (t Answer) AsNoulAnswer() (NoulAnswer, error) {
@@ -299,40 +512,6 @@ func (t *Answer) MergeNoulAnswer(v NoulAnswer) error {
 		return err
 	}
 	b, err = runtime.JSONMerge(b, []byte(`{"type":"noul"}`))
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsScoreAnswer returns the union data inside the Answer as a ScoreAnswer
-func (t Answer) AsScoreAnswer() (ScoreAnswer, error) {
-	var body ScoreAnswer
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromScoreAnswer overwrites any union data inside the Answer as the provided ScoreAnswer
-func (t *Answer) FromScoreAnswer(v ScoreAnswer) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	b, err = runtime.JSONMerge(b, []byte(`{"type":"score"}`))
-	t.union = b
-	return err
-}
-
-// MergeScoreAnswer performs a merge with any union data inside the Answer, using the provided ScoreAnswer
-func (t *Answer) MergeScoreAnswer(v ScoreAnswer) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	b, err = runtime.JSONMerge(b, []byte(`{"type":"score"}`))
 	if err != nil {
 		return err
 	}
@@ -376,6 +555,74 @@ func (t *Answer) MergeChoiceAnswer(v ChoiceAnswer) error {
 	return err
 }
 
+// AsScoreAnswer returns the union data inside the Answer as a ScoreAnswer
+func (t Answer) AsScoreAnswer() (ScoreAnswer, error) {
+	var body ScoreAnswer
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromScoreAnswer overwrites any union data inside the Answer as the provided ScoreAnswer
+func (t *Answer) FromScoreAnswer(v ScoreAnswer) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"score"}`))
+	t.union = b
+	return err
+}
+
+// MergeScoreAnswer performs a merge with any union data inside the Answer, using the provided ScoreAnswer
+func (t *Answer) MergeScoreAnswer(v ScoreAnswer) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"score"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsBoxAnswer returns the union data inside the Answer as a BoxAnswer
+func (t Answer) AsBoxAnswer() (BoxAnswer, error) {
+	var body BoxAnswer
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromBoxAnswer overwrites any union data inside the Answer as the provided BoxAnswer
+func (t *Answer) FromBoxAnswer(v BoxAnswer) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"box"}`))
+	t.union = b
+	return err
+}
+
+// MergeBoxAnswer performs a merge with any union data inside the Answer, using the provided BoxAnswer
+func (t *Answer) MergeBoxAnswer(v BoxAnswer) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"box"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t Answer) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"type"`
@@ -390,6 +637,8 @@ func (t Answer) ValueByDiscriminator() (interface{}, error) {
 		return nil, err
 	}
 	switch discriminator {
+	case "box":
+		return t.AsBoxAnswer()
 	case "choice":
 		return t.AsChoiceAnswer()
 	case "noul":
@@ -513,6 +762,40 @@ func (t *Question) MergeScoreQuestion(v ScoreQuestion) error {
 	return err
 }
 
+// AsBoxQuestion returns the union data inside the Question as a BoxQuestion
+func (t Question) AsBoxQuestion() (BoxQuestion, error) {
+	var body BoxQuestion
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromBoxQuestion overwrites any union data inside the Question as the provided BoxQuestion
+func (t *Question) FromBoxQuestion(v BoxQuestion) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"box"}`))
+	t.union = b
+	return err
+}
+
+// MergeBoxQuestion performs a merge with any union data inside the Question, using the provided BoxQuestion
+func (t *Question) MergeBoxQuestion(v BoxQuestion) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"box"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t Question) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"type"`
@@ -527,6 +810,8 @@ func (t Question) ValueByDiscriminator() (interface{}, error) {
 		return nil, err
 	}
 	switch discriminator {
+	case "box":
+		return t.AsBoxQuestion()
 	case "choice":
 		return t.AsChoiceQuestion()
 	case "noul":
