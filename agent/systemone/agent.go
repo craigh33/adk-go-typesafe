@@ -2,6 +2,7 @@
 package systemone
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,8 +28,11 @@ type Config struct {
 	API         typesafe.Evaluator
 	Model       string
 	Questions   map[string]typesafe.Question
-	// State defaults to the initiating user message's text. Override for structured state.
+
+	// State overrides the default projection of the initiating user's text and
+	// inline PNG/JPEG images. Use it for application-defined structured state.
 	State func(agent.InvocationContext) (any, error)
+
 	// OutputKey stores the assessment in session state; defaults to Name.
 	OutputKey string
 	Routing   *Routing
@@ -43,9 +47,8 @@ type Routing struct {
 	Fallback      agent.Agent
 }
 
-// New creates an ADK custom agent. It emits the assessment and stores it in
-// session state before running the selected child. No chat model is needed
-// for classification. Consumers receive events from both classifier and child.
+// New creates an ADK agent that emits and stores an assessment before running
+// the selected child. Events include both classifier and child output.
 func New(cfg Config) (agent.Agent, error) {
 	if strings.TrimSpace(cfg.Name) == "" || cfg.Name == "user" {
 		return nil, errors.New("systemone agent: a non-reserved name is required")
@@ -56,9 +59,6 @@ func New(cfg Config) (agent.Agent, error) {
 	cfg.Questions = maps.Clone(cfg.Questions)
 	if err := (&typesafe.Request{State: "", Model: cfg.Model, Questions: cfg.Questions}).Validate(); err != nil {
 		return nil, err
-	}
-	if cfg.State == nil {
-		cfg.State = userText
 	}
 	if cfg.OutputKey == "" {
 		cfg.OutputKey = cfg.Name
@@ -118,11 +118,28 @@ func (cfg Config) run(ctx agent.InvocationContext) iter.Seq2[*session.Event, err
 }
 
 func (cfg Config) evaluate(ctx agent.InvocationContext) (*typesafe.Response, error) {
-	state, err := cfg.State(ctx)
+	var (
+		state  any
+		assets map[string]typesafe.Image
+		err    error
+	)
+
+	if cfg.State != nil {
+		state, err = cfg.State(ctx)
+	} else {
+		state, assets, err = userContent(ctx)
+	}
+
 	if err != nil {
 		return nil, err
 	}
-	return cfg.API.Evaluate(ctx, &typesafe.Request{State: state, Model: cfg.Model, Questions: cfg.Questions})
+
+	return cfg.API.Evaluate(ctx, &typesafe.Request{
+		State:     state,
+		Model:     cfg.Model,
+		Questions: cfg.Questions,
+		Assets:    assets,
+	})
 }
 
 func (r *Routing) selectAgent(response *typesafe.Response, record map[string]any) (agent.Agent, error) {
@@ -154,22 +171,51 @@ func validateConfidence(value float64) error {
 	return nil
 }
 
-func userText(ctx agent.InvocationContext) (any, error) {
+func userContent(ctx agent.InvocationContext) (any, map[string]typesafe.Image, error) {
 	var text strings.Builder
+	assets := make(map[string]typesafe.Image)
+
+	var parts []*genai.Part
 	if content := ctx.UserContent(); content != nil {
-		for _, part := range content.Parts {
-			if part != nil && !part.Thought && part.Text != "" {
-				if text.Len() > 0 {
-					text.WriteByte('\n')
-				}
-				text.WriteString(part.Text)
+		parts = content.Parts
+	}
+
+	for _, part := range parts {
+		if part == nil || part.Thought {
+			continue
+		}
+
+		if part.Text != "" {
+			if text.Len() > 0 {
+				text.WriteByte('\n')
 			}
+
+			text.WriteString(part.Text)
+		}
+
+		if blob := part.InlineData; blob != nil {
+			if (blob.MIMEType != "image/png" && blob.MIMEType != "image/jpeg" && blob.MIMEType != "image/jpg") ||
+				len(blob.Data) == 0 {
+				return nil, nil, errors.New("systemone agent: inline data must contain a PNG or JPEG image")
+			}
+
+			reference := rand.Text()
+			assets[reference] = typesafe.Image{Data: blob.Data}
+			text.WriteString("\n" + reference + "\n")
+		}
+
+		if part.FileData != nil {
+			return nil, nil, errors.New("systemone agent: file URI parts require inline image bytes")
 		}
 	}
+
 	if strings.TrimSpace(text.String()) == "" {
-		return nil, errors.New("systemone agent: user text is required; configure State for structured input")
+		return nil, nil, errors.New(
+			"systemone agent: user text or an inline image is required; configure State for structured input",
+		)
 	}
-	return text.String(), nil
+
+	return text.String(), assets, nil
 }
 
 func routingAgents(cfg Config) ([]agent.Agent, error) {

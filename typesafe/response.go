@@ -10,8 +10,7 @@ import (
 	apitypes "github.com/craigh33/adk-go-typesafe/internal/typesafe"
 )
 
-// Answer contains one of ChoiceAnswer, ScoreAnswer, or NoulAnswer.
-// Use a type assertion or type switch to access the corresponding result.
+// Answer contains one of ChoiceAnswer, ScoreAnswer, NoulAnswer, or BoxAnswer.
 type Answer interface {
 	kind() string
 }
@@ -30,6 +29,15 @@ func (a ScoreAnswer) kind() string { return scoreType }
 type NoulAnswer apitypes.NoulAnswer
 
 func (a NoulAnswer) kind() string { return noulType }
+
+// BoxAnswer contains normalized image edges and optional confidence.
+// A nil Confidence means the model did not provide confidence.
+type BoxAnswer apitypes.BoxAnswer
+
+func (a BoxAnswer) kind() string { return boxType }
+
+// BoxCoordinates contains edges between zero and one, measured from the top-left.
+type BoxCoordinates = apitypes.BoxCoordinates
 
 // Usage reports the API's token counts.
 type Usage apitypes.Usage
@@ -69,9 +77,11 @@ func (r *Response) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+//nolint:gocognit
 func decodeAnswer(data []byte) (Answer, error) {
 	var discriminator struct {
-		Type string `json:"type"`
+		Type       string          `json:"type"`
+		Confidence json.RawMessage `json:"confidence"`
 	}
 	if err := json.Unmarshal(data, &discriminator); err != nil {
 		return nil, err
@@ -109,6 +119,21 @@ func decodeAnswer(data []byte) (Answer, error) {
 		if err := json.Unmarshal(data, &answer); err != nil {
 			return nil, err
 		}
+		return answer, nil
+	case boxType:
+		if err := requireFields(data, "box.top", "box.bottom", "box.left", "box.right"); err != nil {
+			return nil, err
+		}
+
+		if len(discriminator.Confidence) == 0 {
+			return nil, errors.New("missing required field \"confidence\"")
+		}
+
+		var answer BoxAnswer
+		if err := json.Unmarshal(data, &answer); err != nil {
+			return nil, err
+		}
+
 		return answer, nil
 	default:
 		return nil, fmt.Errorf("unknown answer type %q", discriminator.Type)
