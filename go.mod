@@ -3,7 +3,7 @@ module github.com/craigh33/adk-go-typesafe
 go 1.26.6
 
 require (
-	github.com/oapi-codegen/runtime v1.7.0
+	github.com/oapi-codegen/runtime v1.8.0
 	google.golang.org/adk/v2 v2.6.0
 	google.golang.org/genai v1.75.0
 )
