@@ -175,6 +175,23 @@ type ChoiceQuestion struct {
 	Type string `json:"type"`
 }
 
+// HTTPBadRequestError Application validation failures returned with HTTP status 400.
+type HTTPBadRequestError struct {
+	// Detail Explanation of the invalid request. String details and message fields are bounded, with shortened text ending with ….
+	Detail HTTPBadRequestError_Detail `json:"detail"`
+}
+
+// HTTPBadRequestErrorDetail0 defines model for HTTPBadRequestError.Detail.0.
+type HTTPBadRequestErrorDetail0 = string
+
+// HTTPBadRequestErrorDetail1 defines model for HTTPBadRequestError.Detail.1.
+type HTTPBadRequestErrorDetail1 map[string]interface{}
+
+// HTTPBadRequestError_Detail Explanation of the invalid request. String details and message fields are bounded, with shortened text ending with ….
+type HTTPBadRequestError_Detail struct {
+	union json.RawMessage
+}
+
 // HTTPValidationError Request validation failures returned with HTTP status 422.
 type HTTPValidationError struct {
 	// Detail Validation errors describing which request values are missing or invalid.
@@ -356,22 +373,22 @@ type Usage struct {
 
 // ValidationError A request validation error at a specific field or array element.
 type ValidationError struct {
-	// Ctx Additional context used to explain the validation failure.
+	// Ctx Additional context used to explain the validation failure. Entries may be omitted or shortened.
 	//
 	// Examples: {"min_length":1}
 	Ctx *map[string]interface{} `json:"ctx,omitempty"`
 
-	// Input The input value that failed validation.
+	// Input Text preview of the rejected input. May be shortened with ….
 	//
 	// Examples: {"type":"score"}
-	Input interface{} `json:"input,omitempty"`
+	Input *string `json:"input,omitempty"`
 
-	// Loc Path to the invalid value: the request location followed by field names and array indices.
+	// Loc Path to the invalid value: the request location followed by field names and array indices. May be empty.
 	//
 	// Examples: ["body","questions","urgency","score","criteria"]
 	Loc []ValidationError_Loc_Item `json:"loc"`
 
-	// Msg Human-readable explanation of the validation failure.
+	// Msg Human-readable explanation of the validation failure. May be shortened with ….
 	//
 	// Examples: Field required
 	Msg string `json:"msg"`
@@ -656,6 +673,68 @@ func (t Answer) MarshalJSON() ([]byte, error) {
 }
 
 func (t *Answer) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsHTTPBadRequestErrorDetail0 returns the union data inside the HTTPBadRequestError_Detail as a HTTPBadRequestErrorDetail0
+func (t HTTPBadRequestError_Detail) AsHTTPBadRequestErrorDetail0() (HTTPBadRequestErrorDetail0, error) {
+	var body HTTPBadRequestErrorDetail0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromHTTPBadRequestErrorDetail0 overwrites any union data inside the HTTPBadRequestError_Detail as the provided HTTPBadRequestErrorDetail0
+func (t *HTTPBadRequestError_Detail) FromHTTPBadRequestErrorDetail0(v HTTPBadRequestErrorDetail0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeHTTPBadRequestErrorDetail0 performs a merge with any union data inside the HTTPBadRequestError_Detail, using the provided HTTPBadRequestErrorDetail0
+func (t *HTTPBadRequestError_Detail) MergeHTTPBadRequestErrorDetail0(v HTTPBadRequestErrorDetail0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsHTTPBadRequestErrorDetail1 returns the union data inside the HTTPBadRequestError_Detail as a HTTPBadRequestErrorDetail1
+func (t HTTPBadRequestError_Detail) AsHTTPBadRequestErrorDetail1() (HTTPBadRequestErrorDetail1, error) {
+	var body HTTPBadRequestErrorDetail1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromHTTPBadRequestErrorDetail1 overwrites any union data inside the HTTPBadRequestError_Detail as the provided HTTPBadRequestErrorDetail1
+func (t *HTTPBadRequestError_Detail) FromHTTPBadRequestErrorDetail1(v HTTPBadRequestErrorDetail1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeHTTPBadRequestErrorDetail1 performs a merge with any union data inside the HTTPBadRequestError_Detail, using the provided HTTPBadRequestErrorDetail1
+func (t *HTTPBadRequestError_Detail) MergeHTTPBadRequestErrorDetail1(v HTTPBadRequestErrorDetail1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t HTTPBadRequestError_Detail) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *HTTPBadRequestError_Detail) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
